@@ -8,16 +8,6 @@ const { confirmPaymentAndNotify } = require("../services/paymentConfirmation.ser
 const { verifyAndConfirmPaymentBySessionId } = require("../services/payment.service");
 
 exports.handleWebhook = catchAsync(async (req, res) => {
-  console.log("[WEBHOOK] Webhook endpoint hit", {
-    method: req.method,
-    url: req.url,
-    originalUrl: req.originalUrl,
-    hasRawBody: !!req.rawBody,
-    hasBody: !!req.body,
-    contentType: req.headers["content-type"],
-    hasSignature: !!req.headers["stripe-signature"]
-  });
-
   const sig = req.headers["stripe-signature"];
   const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
 
@@ -25,151 +15,43 @@ exports.handleWebhook = catchAsync(async (req, res) => {
     console.error("[WEBHOOK] STRIPE_WEBHOOK_SECRET is not configured");
     return errorResponse(res, "Webhook secret not configured", 500);
   }
-
-  // Get raw body - MUST use rawBody for signature verification
-  // Stripe requires the exact raw body bytes as received - byte-for-byte match
   let payload = req.rawBody;
-  
-  // Log what we have before processing
-  console.log("[WEBHOOK] Body state:", {
-    hasRawBody: !!req.rawBody,
-    rawBodyType: req.rawBody ? typeof req.rawBody : 'none',
-    rawBodyIsBuffer: req.rawBody ? Buffer.isBuffer(req.rawBody) : false,
-    hasBody: !!req.body,
-    bodyType: req.body ? typeof req.body : 'none',
-    bodyIsBuffer: req.body ? Buffer.isBuffer(req.body) : false,
-    bodyIsObject: req.body ? (typeof req.body === 'object' && !Buffer.isBuffer(req.body)) : false
-  });
-  
-  // CRITICAL: If rawBody is not a Buffer, we cannot verify the signature
-  // Stripe signature verification requires the exact raw bytes
   if (!payload) {
-    // Try to use body if it's a Buffer
     if (req.body && Buffer.isBuffer(req.body)) {
-      console.warn("[WEBHOOK] rawBody not found, using req.body (Buffer)");
       payload = req.body;
     } else {
-      console.error("[WEBHOOK] ERROR: rawBody not found and req.body is not a Buffer");
-      console.error("[WEBHOOK] Cannot verify signature without raw body bytes");
       return errorResponse(res, "Raw body not available for signature verification", 400);
     }
   }
   
-  // Ensure payload is a Buffer - this is required for signature verification
   if (!Buffer.isBuffer(payload)) {
     if (typeof payload === 'string') {
-      console.warn("[WEBHOOK] Payload is string, converting to Buffer");
-      // Convert string to Buffer - but this may cause signature issues if encoding differs
       payload = Buffer.from(payload, 'utf8');
     } else {
-      console.error("[WEBHOOK] ERROR: Payload is not a Buffer or string:", typeof payload);
       return errorResponse(res, "Invalid payload format - must be Buffer for signature verification", 400);
     }
   }
-  
-  // Log final payload info
-  console.log("[WEBHOOK] Using payload:", {
-    isBuffer: Buffer.isBuffer(payload),
-    length: payload.length,
-    firstBytes: payload.slice(0, 50).toString('hex')
-  });
 
   if (!sig) {
-    console.error("[WEBHOOK] Missing stripe-signature header");
     return errorResponse(res, "Missing stripe-signature header", 400);
   }
 
-  // Log signature info (without exposing the full secret)
-  const secretLength = webhookSecret ? webhookSecret.length : 0;
-  console.log("[WEBHOOK] Signature info:", {
-    signatureLength: sig.length,
-    signaturePrefix: sig.substring(0, 30),
-    secretConfigured: !!webhookSecret,
-    secretLength: secretLength,
-    secretPrefix: webhookSecret ? webhookSecret.substring(0, 15) : 'none',
-    secretStartsWithWhsec: webhookSecret ? webhookSecret.startsWith('whsec_') : false,
-    secretEndsWith: webhookSecret && secretLength > 10 ? webhookSecret.substring(secretLength - 4) : 'none'
-  });
-  
   // Validate webhook secret format
   if (webhookSecret && !webhookSecret.startsWith('whsec_')) {
-    console.error("[WEBHOOK] ERROR: Webhook secret does not start with 'whsec_'");
-    console.error("[WEBHOOK] This might be the endpoint ID instead of the signing secret");
-    console.error("[WEBHOOK] Please check Stripe Dashboard → Webhooks → Your endpoint → Signing secret");
     return errorResponse(res, "Invalid webhook secret format. Must start with 'whsec_'. Check Stripe Dashboard for the correct signing secret.", 500);
-  }
-  
-  // Additional validation: webhook secret should be around 40-50 characters
-  if (webhookSecret && (secretLength < 30 || secretLength > 60)) {
-    console.warn("[WEBHOOK] WARNING: Webhook secret length seems unusual:", secretLength);
-    console.warn("[WEBHOOK] Typical webhook secrets are 40-50 characters long");
   }
 
   let event;
 
   try {
-    // Stripe's constructEvent can accept Buffer or string
-    // Try with Buffer first (preferred), but if that fails, try as string
-    // The payload must be the exact raw bytes as received
-    console.log("[WEBHOOK] Attempting signature verification with Buffer...");
-    console.log("[WEBHOOK] Payload details:", {
-      isBuffer: Buffer.isBuffer(payload),
-      length: payload.length,
-      firstChars: payload.slice(0, 100).toString('utf8').substring(0, 50)
-    });
-    
     event = verifyWebhookSignature(payload, sig, webhookSecret);
-    console.log("[WEBHOOK] ✅ Event verified successfully:", event.type, event.id);
   } catch (err) {
-    console.error("[WEBHOOK] ❌ Signature verification failed with Buffer");
-    console.error("[WEBHOOK] Error details:", {
-      message: err.message,
-      payloadLength: payload.length,
-      payloadType: Buffer.isBuffer(payload) ? 'Buffer' : typeof payload,
-      signatureTimestamp: sig.includes('t=') ? sig.split('t=')[1]?.split(',')[0] : 'unknown'
-    });
-    
-    // Log the first part of payload for debugging (safe to log)
+    // If Buffer fails, try as string (fallback)
     try {
-      const payloadPreview = payload.slice(0, 200).toString('utf8');
-      console.log("[WEBHOOK] Payload preview (first 200 chars):", payloadPreview);
-    } catch (e) {
-      console.error("[WEBHOOK] Could not log payload preview");
-    }
-    
-    // If Buffer fails, try as string (sometimes Stripe expects string)
-    // But this should rarely be needed
-    try {
-      console.log("[WEBHOOK] Retrying with payload as string...");
       const payloadString = payload.toString('utf8');
       event = verifyWebhookSignature(payloadString, sig, webhookSecret);
-      console.log("[WEBHOOK] ✅ Event verified successfully with string:", event.type, event.id);
     } catch (stringErr) {
-      console.error("[WEBHOOK] ❌ Signature verification also failed with string");
-      console.error("[WEBHOOK] String error:", stringErr.message);
-      
-      // CRITICAL DIAGNOSTIC INFORMATION
-      console.error("[WEBHOOK] ========================================");
-      console.error("[WEBHOOK] TROUBLESHOOTING CHECKLIST:");
-      console.error("[WEBHOOK] 1. Verify webhook URL in Stripe Dashboard matches EXACTLY:");
-      console.error("[WEBHOOK]    https://taxigate-test-backend.vercel.app/api/payments/webhook");
-      console.error("[WEBHOOK] 2. Get the signing secret from THAT SPECIFIC endpoint in Stripe");
-      console.error("[WEBHOOK] 3. Make sure STRIPE_WEBHOOK_SECRET in Vercel is the signing secret (whsec_...)");
-      console.error("[WEBHOOK] 4. NOT the endpoint ID (we_...)");
-      console.error("[WEBHOOK] 5. NOT a CLI secret from 'stripe listen'");
-      console.error("[WEBHOOK] 6. Redeploy Vercel after updating the secret");
-      console.error("[WEBHOOK] 7. Check if you have multiple webhook endpoints - use the secret from the correct one");
-      console.error("[WEBHOOK] ========================================");
-      
-      // Provide helpful error message
-      const errorMsg = `Webhook signature verification failed. ` +
-        `The webhook secret in Vercel (${webhookSecret.substring(0, 15)}...) does not match the endpoint in Stripe. ` +
-        `Please verify: 1) The webhook URL in Stripe is exactly: https://taxigate-test-backend.vercel.app/api/payments/webhook ` +
-        `2) You copied the SIGNING SECRET (whsec_...) from that endpoint (not the endpoint ID) ` +
-        `3) STRIPE_WEBHOOK_SECRET in Vercel matches that secret exactly ` +
-        `4) You redeployed after updating the secret.`;
-      
-      return errorResponse(res, errorMsg, 400);
+      return errorResponse(res, `Webhook signature verification failed: ${err.message}`, 400);
     }
   }
 

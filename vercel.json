@@ -12,6 +12,11 @@
   ],
   "routes": [
     {
+      "src": "/api/payments/webhook",
+      "dest": "src/server.js",
+      "methods": ["POST", "GET"]
+    },
+    {
       "src": "/api/(.*)",
       "dest": "src/server.js"
     },

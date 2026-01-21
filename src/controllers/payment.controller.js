@@ -8,6 +8,16 @@ const { confirmPaymentAndNotify } = require("../services/paymentConfirmation.ser
 const { verifyAndConfirmPaymentBySessionId } = require("../services/payment.service");
 
 exports.handleWebhook = catchAsync(async (req, res) => {
+  console.log("[WEBHOOK] Webhook endpoint hit", {
+    method: req.method,
+    url: req.url,
+    originalUrl: req.originalUrl,
+    hasRawBody: !!req.rawBody,
+    hasBody: !!req.body,
+    contentType: req.headers["content-type"],
+    hasSignature: !!req.headers["stripe-signature"]
+  });
+
   const sig = req.headers["stripe-signature"];
   const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
 
@@ -15,10 +25,23 @@ exports.handleWebhook = catchAsync(async (req, res) => {
     console.error("[WEBHOOK] STRIPE_WEBHOOK_SECRET is not configured");
     return errorResponse(res, "Webhook secret not configured", 500);
   }
+
+  // Get raw body - prioritize rawBody, fallback to body
   let payload = req.rawBody || req.body;
   
+  // If payload is not a Buffer or string, convert it
   if (!Buffer.isBuffer(payload) && typeof payload !== 'string') {
-    payload = JSON.stringify(payload);
+    if (payload && typeof payload === 'object') {
+      payload = JSON.stringify(payload);
+    } else {
+      console.error("[WEBHOOK] Invalid payload type:", typeof payload);
+      return errorResponse(res, "Invalid payload format", 400);
+    }
+  }
+
+  // Convert string to Buffer if needed for signature verification
+  if (typeof payload === 'string') {
+    payload = Buffer.from(payload, 'utf8');
   }
 
   if (!sig) {
@@ -29,8 +52,8 @@ exports.handleWebhook = catchAsync(async (req, res) => {
   let event;
 
   try {
-    const rawPayload = Buffer.isBuffer(payload) ? payload : (typeof payload === 'string' ? payload : JSON.stringify(payload));
-    event = verifyWebhookSignature(rawPayload, sig, webhookSecret);
+    event = verifyWebhookSignature(payload, sig, webhookSecret);
+    console.log("[WEBHOOK] Event verified:", event.type, event.id);
   } catch (err) {
     console.error("[WEBHOOK] Signature verification failed:", err.message);
     return errorResponse(res, `Webhook signature verification failed: ${err.message}`, 400);
@@ -51,12 +74,15 @@ exports.handleWebhook = catchAsync(async (req, res) => {
         break;
 
       default:
+        console.log("[WEBHOOK] Unhandled event type:", event.type);
         break;
     }
 
     return res.status(200).json({ received: true });
   } catch (error) {
     console.error("[WEBHOOK] Error processing webhook:", error.message);
+    console.error("[WEBHOOK] Error stack:", error.stack);
+    // Still return 200 to prevent Stripe from retrying
     return res.status(200).json({ received: true, error: error.message });
   }
 });

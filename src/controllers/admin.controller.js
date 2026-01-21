@@ -35,11 +35,7 @@ exports.signupAdmin = catchAsync(async (req, res, next) => {
       role: admin.role,
       tokenVersion: admin.tokenVersion || 0,
     };
-
-    // Generate access and refresh tokens
     const tokenResult = await sendTokens(safeAdmin, 201, res, "Admin registered successfully", "admin");
-
-    // Store hashed refresh token in database
     admin.refreshToken = tokenResult.hashedRefreshToken;
     await admin.save({ validateBeforeSave: false });
 

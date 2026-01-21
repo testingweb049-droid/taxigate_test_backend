@@ -2,7 +2,7 @@
 
 ## Production Webhook URL
 ```
-https://taxigate-driver-panel.vercel.app/api/payments/webhook
+https://taxigate-test-backend.vercel.app/api/payments/webhook
 ```
 
 ## Step 1: Configure Webhook in Stripe Dashboard
@@ -11,7 +11,7 @@ https://taxigate-driver-panel.vercel.app/api/payments/webhook
 2. Click **"Add endpoint"** or **"Add webhook endpoint"**
 3. Enter your webhook URL:
    ```
-   https://taxigate-driver-panel.vercel.app/api/payments/webhook
+   https://taxigate-test-backend.vercel.app/api/payments/webhook
    ```
 4. Select the events to listen for:
    - ✅ `checkout.session.completed`
@@ -29,7 +29,7 @@ https://taxigate-driver-panel.vercel.app/api/payments/webhook
 ## Step 3: Add Webhook Secret to Vercel Environment Variables
 
 1. Go to your [Vercel Dashboard](https://vercel.com/dashboard)
-2. Select your project: `taxigate-driver-panel` (or your project name)
+2. Select your project: `taxigate-test-backend` (or your project name)
 3. Go to **Settings** → **Environment Variables**
 4. Add a new environment variable:
    - **Name**: `STRIPE_WEBHOOK_SECRET`

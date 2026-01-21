@@ -68,16 +68,6 @@ const isWebhookPath = (req) => {
 // This MUST capture the raw body stream before ANY other processing
 app.use((req, res, next) => {
   if (isWebhookPath(req)) {
-    // Log webhook request for debugging
-    console.log("[WEBHOOK] Incoming webhook request:", {
-      method: req.method,
-      url: req.url,
-      originalUrl: req.originalUrl,
-      path: req.path,
-      baseUrl: req.baseUrl,
-      contentType: req.headers["content-type"]
-    });
-    
     // Use express.raw with verify to capture exact bytes
     // This is the ONLY way to get the raw body for Stripe signature verification
     const rawParser = express.raw({ 
@@ -85,13 +75,7 @@ app.use((req, res, next) => {
       limit: "10mb",
       verify: (req, res, buf, encoding) => {
         // Store the raw buffer - this is the exact bytes from Stripe
-        // CRITICAL: Use the buffer directly, don't convert it
         req.rawBody = buf;
-        console.log("[WEBHOOK] Raw body captured via verify callback:", {
-          isBuffer: Buffer.isBuffer(buf),
-          length: buf.length,
-          encoding: encoding
-        });
       }
     });
     
@@ -102,19 +86,12 @@ app.use((req, res, next) => {
       }
       
       // Ensure rawBody is set
-      if (!req.rawBody) {
-        if (req.body && Buffer.isBuffer(req.body)) {
-          req.rawBody = req.body;
-          console.log("[WEBHOOK] Using req.body as rawBody (Buffer)");
-        } else {
-          console.error("[WEBHOOK] ERROR: rawBody not available!");
-        }
+      if (!req.rawBody && req.body && Buffer.isBuffer(req.body)) {
+        req.rawBody = req.body;
       }
       
-      // CRITICAL: Clear any parsed body to prevent accidental use
-      // The rawBody is what we need for signature verification
+      // Clear any parsed body to prevent accidental use
       if (req.body && !Buffer.isBuffer(req.body)) {
-        console.warn("[WEBHOOK] WARNING: req.body was parsed, clearing it");
         delete req.body;
       }
       

@@ -26,11 +26,14 @@ exports.confirmPaymentAndNotify = async (bookingId, paymentId) => {
   }
 
   // Check if already processed (idempotency)
-  if (payment.status === "succeeded") {
-    const booking = await Booking.findById(bookingId);
-    if (booking && booking.isPaid) {
-      return { booking, payment };
-    }
+  const existingBooking = await Booking.findById(bookingId);
+  if (!existingBooking) {
+    throw new Error("Booking not found");
+  }
+
+  // If booking is already paid and notifications were sent, skip processing
+  if (payment.status === "succeeded" && existingBooking.isPaid && existingBooking.notificationsSentAt) {
+    return { booking: existingBooking, payment };
   }
 
   // Update payment status (if not already succeeded)
@@ -56,12 +59,15 @@ exports.confirmPaymentAndNotify = async (bookingId, paymentId) => {
     throw new Error("Booking not found");
   }
 
-  // Send all notifications (emails, push notifications, Ably, etc.)
-  try {
-    await sendBookingNotificationsForBooking(booking);
-  } catch (notificationError) {
-    // Log error but don't fail payment confirmation
-    console.error("Error sending notifications after payment confirmation:", notificationError.message);
+  // Only send notifications if they haven't been sent yet
+  // This prevents double emails when webhook is called multiple times
+  if (!booking.notificationsSentAt) {
+    try {
+      await sendBookingNotificationsForBooking(booking);
+    } catch (notificationError) {
+      // Log error but don't fail payment confirmation
+      console.error("Error sending notifications after payment confirmation:", notificationError.message);
+    }
   }
 
   return { booking, payment };
@@ -85,6 +91,7 @@ const sendBookingNotificationsForBooking = async (booking) => {
   const { scheduleBookingExpiry } = require("../services/bookingExpiryScheduler");
 
   // Check if notifications already sent
+  // This prevents double emails when webhook is called multiple times
   if (booking.notificationsSentAt) {
     return;
   }

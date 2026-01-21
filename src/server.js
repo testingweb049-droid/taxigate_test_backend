@@ -68,61 +68,44 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// Only start server if not in Vercel serverless environment
-// In Vercel, the app is exported and handled by the serverless function
-if (!process.env.VERCEL) {
-  // Initialize connection on startup
-  (async () => {
-    try {
-      await ensureDBConnection();
+// Initialize connection on startup
+(async () => {
+  try {
+    await ensureDBConnection();
+    const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+    if (webhookSecret) {
+      const secretPreview = webhookSecret.length > 10 
+        ? `${webhookSecret.substring(0, 6)}...${webhookSecret.substring(webhookSecret.length - 4)}`
+        : "***";
+      logger.info(chalk.green(`Stripe webhook secret configured: ${secretPreview}`));
+    } else {
+      logger.warn(chalk.yellow("STRIPE_WEBHOOK_SECRET not found in .env file"));
+      logger.warn(chalk.yellow("   Webhook endpoint will not work without this secret"));
+    }
+    logger.info(chalk.blue("Initializing cron jobs..."));
+    notifyUpcomingBookingsJob();
+    logger.info(chalk.green("All cron jobs initialized successfully"));
+    
+    const PORT = process.env.PORT || 5000;
+    const NODE_ENV = process.env.NODE_ENV || "development";
+    
+    app.listen(PORT, () => {
+      logger.info(chalk.green(`Server running in ${NODE_ENV} mode on port ${PORT}`));
       
-      // Check webhook secret configuration
-      const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
-      if (webhookSecret) {
-        const secretPreview = webhookSecret.length > 10 
-          ? `${webhookSecret.substring(0, 6)}...${webhookSecret.substring(webhookSecret.length - 4)}`
-          : "***";
-        logger.info(chalk.green(`Stripe webhook secret configured: ${secretPreview}`));
+      if (NODE_ENV === "production") {
+        const productionUrl = process.env.VERCEL_URL 
+          ? `https://${process.env.VERCEL_URL}` 
+          : "https://taxigate-driver-panel.vercel.app";
+        logger.info(chalk.blue(`Webhook endpoint: ${productionUrl}/api/payments/webhook`));
+        logger.info(chalk.yellow(`Configure this URL in Stripe Dashboard → Webhooks`));
       } else {
-        logger.warn(chalk.yellow("STRIPE_WEBHOOK_SECRET not found in .env file"));
-        logger.warn(chalk.yellow("   Webhook endpoint will not work without this secret"));
-      }
-      
-      // Initialize background jobs
-      logger.info(chalk.blue("Initializing cron jobs..."));
-      // Note: Booking expiry is now handled in real-time via bookingExpiryScheduler
-      // No need for cron job - each booking schedules its own expiry timer
-      notifyUpcomingBookingsJob();
-      logger.info(chalk.green("All cron jobs initialized successfully"));
-      
-      const PORT = process.env.PORT || 5000;
-      const NODE_ENV = process.env.NODE_ENV || "development";
-      
-      app.listen(PORT, () => {
-        logger.info(chalk.green(`Server running in ${NODE_ENV} mode on port ${PORT}`));
         logger.info(chalk.blue(`Webhook endpoint ready at: http://localhost:${PORT}/api/payments/webhook`));
         logger.info(chalk.yellow(`For local testing, use Stripe CLI: stripe listen --forward-to localhost:${PORT}/api/payments/webhook`));
-      });
-    } catch (err) {
-      process.exit(1);
-    }
-  })();
-} else {
-  // In Vercel, initialize DB connection on first request (lazy loading)
-  // The middleware will handle connection for each request
-  logger.info(chalk.blue("Running in Vercel serverless environment"));
-  
-  // Check webhook secret configuration
-  const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
-  if (webhookSecret) {
-    const secretPreview = webhookSecret.length > 10 
-      ? `${webhookSecret.substring(0, 6)}...${webhookSecret.substring(webhookSecret.length - 4)}`
-      : "***";
-    logger.info(chalk.green(`Stripe webhook secret configured: ${secretPreview}`));
-  } else {
-    logger.warn(chalk.yellow("STRIPE_WEBHOOK_SECRET not found in environment variables"));
-    logger.warn(chalk.yellow("   Webhook endpoint will not work without this secret"));
+      }
+    });
+  } catch (err) {
+    process.exit(1);
   }
-}
+})();
 
 module.exports = app;

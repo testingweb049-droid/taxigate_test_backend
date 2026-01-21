@@ -5,21 +5,23 @@ const { protect, restrictTo } = require("../middleware/auth.middleware");
 
 const router = express.Router();
 
+// Webhook endpoint - must be before other routes to avoid conflicts
 router.post("/webhook", handleWebhook);
-router.get("/booking/:bookingId", getPaymentStatus);
-router.get("/verify/:sessionId", verifyPayment);
-router.get("/all", protect, restrictTo("admin"), getAllPayments);
-router.delete("/:paymentId", protect, restrictTo("admin"), deletePayment);
-
-router.get("/webhook/test", (req, res) => {
-  console.log("[WEBHOOK TEST] Webhook route is accessible");
+// GET endpoint for testing webhook route accessibility
+router.get("/webhook", (req, res) => {
   res.json({ 
     message: "Webhook endpoint is accessible",
     path: "/api/payments/webhook",
     method: "POST",
-    note: "Use Stripe CLI or ngrok to forward webhooks to this endpoint"
+    note: "This endpoint accepts POST requests from Stripe",
+    status: "ready"
   });
 });
+
+router.get("/booking/:bookingId", getPaymentStatus);
+router.get("/verify/:sessionId", verifyPayment);
+router.get("/all", protect, restrictTo("admin"), getAllPayments);
+router.delete("/:paymentId", protect, restrictTo("admin"), deletePayment);
 
 module.exports = router;
 

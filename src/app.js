@@ -52,16 +52,32 @@ app.use(
 // Apply raw body parser FIRST for webhook route only (before any JSON parsing)
 // Use a function to check the path and apply raw parser
 const isWebhookPath = (req) => {
-  return req.originalUrl === "/api/payments/webhook" || 
-         (req.path === "/webhook" && req.baseUrl === "/api/payments") ||
-         req.url === "/api/payments/webhook";
+  const url = req.originalUrl || req.url || "";
+  const path = req.path || "";
+  const baseUrl = req.baseUrl || "";
+  
+  // Check multiple possible URL formats for Vercel compatibility
+  return url === "/api/payments/webhook" || 
+         url.includes("/api/payments/webhook") ||
+         (path === "/webhook" && baseUrl === "/api/payments") ||
+         (path === "/webhook" && url.includes("/api/payments/webhook")) ||
+         url.endsWith("/api/payments/webhook");
 };
 
 // Apply raw body parser FIRST for webhook route
 app.use((req, res, next) => {
   if (isWebhookPath(req)) {
+    // Log webhook request for debugging
+    console.log("[WEBHOOK] Incoming webhook request:", {
+      method: req.method,
+      url: req.url,
+      originalUrl: req.originalUrl,
+      path: req.path,
+      baseUrl: req.baseUrl
+    });
+    
     // Apply raw body parser for webhook - this must run first
-    express.raw({ type: "application/json" })(req, res, (err) => {
+    express.raw({ type: "application/json", limit: "10mb" })(req, res, (err) => {
       if (err) {
         console.error("[MIDDLEWARE] Raw body parser error:", err);
         return next(err);

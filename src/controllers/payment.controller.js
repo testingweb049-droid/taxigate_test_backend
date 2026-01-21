@@ -26,23 +26,53 @@ exports.handleWebhook = catchAsync(async (req, res) => {
     return errorResponse(res, "Webhook secret not configured", 500);
   }
 
-  // Get raw body - prioritize rawBody, fallback to body
-  let payload = req.rawBody || req.body;
+  // Get raw body - MUST use rawBody for signature verification
+  // Stripe requires the exact raw body bytes as received - byte-for-byte match
+  let payload = req.rawBody;
   
-  // If payload is not a Buffer or string, convert it
-  if (!Buffer.isBuffer(payload) && typeof payload !== 'string') {
-    if (payload && typeof payload === 'object') {
-      payload = JSON.stringify(payload);
+  // Log what we have before processing
+  console.log("[WEBHOOK] Body state:", {
+    hasRawBody: !!req.rawBody,
+    rawBodyType: req.rawBody ? typeof req.rawBody : 'none',
+    rawBodyIsBuffer: req.rawBody ? Buffer.isBuffer(req.rawBody) : false,
+    hasBody: !!req.body,
+    bodyType: req.body ? typeof req.body : 'none',
+    bodyIsBuffer: req.body ? Buffer.isBuffer(req.body) : false,
+    bodyIsObject: req.body ? (typeof req.body === 'object' && !Buffer.isBuffer(req.body)) : false
+  });
+  
+  // CRITICAL: If rawBody is not a Buffer, we cannot verify the signature
+  // Stripe signature verification requires the exact raw bytes
+  if (!payload) {
+    // Try to use body if it's a Buffer
+    if (req.body && Buffer.isBuffer(req.body)) {
+      console.warn("[WEBHOOK] rawBody not found, using req.body (Buffer)");
+      payload = req.body;
     } else {
-      console.error("[WEBHOOK] Invalid payload type:", typeof payload);
-      return errorResponse(res, "Invalid payload format", 400);
+      console.error("[WEBHOOK] ERROR: rawBody not found and req.body is not a Buffer");
+      console.error("[WEBHOOK] Cannot verify signature without raw body bytes");
+      return errorResponse(res, "Raw body not available for signature verification", 400);
     }
   }
-
-  // Convert string to Buffer if needed for signature verification
-  if (typeof payload === 'string') {
-    payload = Buffer.from(payload, 'utf8');
+  
+  // Ensure payload is a Buffer - this is required for signature verification
+  if (!Buffer.isBuffer(payload)) {
+    if (typeof payload === 'string') {
+      console.warn("[WEBHOOK] Payload is string, converting to Buffer");
+      // Convert string to Buffer - but this may cause signature issues if encoding differs
+      payload = Buffer.from(payload, 'utf8');
+    } else {
+      console.error("[WEBHOOK] ERROR: Payload is not a Buffer or string:", typeof payload);
+      return errorResponse(res, "Invalid payload format - must be Buffer for signature verification", 400);
+    }
   }
+  
+  // Log final payload info
+  console.log("[WEBHOOK] Using payload:", {
+    isBuffer: Buffer.isBuffer(payload),
+    length: payload.length,
+    firstBytes: payload.slice(0, 50).toString('hex')
+  });
 
   if (!sig) {
     console.error("[WEBHOOK] Missing stripe-signature header");

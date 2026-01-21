@@ -93,9 +93,8 @@ app.get('/api/health', (req, res) => {
       logger.info(chalk.green(`Server running in ${NODE_ENV} mode on port ${PORT}`));
       
       if (NODE_ENV === "production") {
-        const productionUrl = process.env.VERCEL_URL 
-          ? `https://${process.env.VERCEL_URL}` 
-          : "https://taxigate-test-backend.vercel.app";
+        // Hardcoded production backend URL
+        const productionUrl = "https://taxigate-test-backend.vercel.app";
         logger.info(chalk.blue(`Webhook endpoint: ${productionUrl}/api/payments/webhook`));
         logger.info(chalk.yellow(`Configure this URL in Stripe Dashboard → Webhooks`));
       } else {

@@ -79,14 +79,49 @@ exports.handleWebhook = catchAsync(async (req, res) => {
     return errorResponse(res, "Missing stripe-signature header", 400);
   }
 
+  // Log signature info (without exposing the full secret)
+  console.log("[WEBHOOK] Signature info:", {
+    signatureLength: sig.length,
+    signaturePrefix: sig.substring(0, 20),
+    secretConfigured: !!webhookSecret,
+    secretPrefix: webhookSecret ? webhookSecret.substring(0, 10) : 'none'
+  });
+
   let event;
 
   try {
+    // Stripe's constructEvent can accept Buffer or string
+    // Try with Buffer first (preferred), but if that fails, try as string
+    // The payload must be the exact raw bytes as received
+    console.log("[WEBHOOK] Attempting signature verification with Buffer...");
     event = verifyWebhookSignature(payload, sig, webhookSecret);
-    console.log("[WEBHOOK] Event verified:", event.type, event.id);
+    console.log("[WEBHOOK] Event verified successfully:", event.type, event.id);
   } catch (err) {
-    console.error("[WEBHOOK] Signature verification failed:", err.message);
-    return errorResponse(res, `Webhook signature verification failed: ${err.message}`, 400);
+    console.error("[WEBHOOK] Signature verification failed with Buffer");
+    console.error("[WEBHOOK] Error details:", {
+      message: err.message,
+      payloadLength: payload.length,
+      payloadType: Buffer.isBuffer(payload) ? 'Buffer' : typeof payload
+    });
+    
+    // If Buffer fails, try as string (sometimes Stripe expects string)
+    // But this should rarely be needed
+    try {
+      console.log("[WEBHOOK] Retrying with payload as string...");
+      const payloadString = payload.toString('utf8');
+      event = verifyWebhookSignature(payloadString, sig, webhookSecret);
+      console.log("[WEBHOOK] Event verified successfully with string:", event.type, event.id);
+    } catch (stringErr) {
+      console.error("[WEBHOOK] Signature verification also failed with string");
+      console.error("[WEBHOOK] String error:", stringErr.message);
+      
+      // Provide helpful error message
+      const errorMsg = `Webhook signature verification failed: ${err.message}. ` +
+        `Please verify that STRIPE_WEBHOOK_SECRET in Vercel matches the webhook secret ` +
+        `for the endpoint: https://taxigate-test-backend.vercel.app/api/payments/webhook`;
+      
+      return errorResponse(res, errorMsg, 400);
+    }
   }
 
   try {

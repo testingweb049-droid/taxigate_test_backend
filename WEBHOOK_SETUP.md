@@ -9,14 +9,16 @@ https://taxigate-test-backend.vercel.app/api/payments/webhook
 
 1. Go to [Stripe Dashboard](https://dashboard.stripe.com/webhooks)
 2. Click **"Add endpoint"** or **"Add webhook endpoint"**
-3. Enter your webhook URL:
+3. **IMPORTANT**: Enter your webhook URL exactly as shown (no trailing slash):
    ```
    https://taxigate-test-backend.vercel.app/api/payments/webhook
    ```
+   ⚠️ **The URL must match exactly** - any difference will cause signature verification to fail
 4. Select the events to listen for:
    - ✅ `checkout.session.completed`
    - ✅ `payment_intent.succeeded`
    - ✅ `payment_intent.payment_failed`
+   - ✅ `charge.updated` (optional, if you want to handle charge updates)
 5. Click **"Add endpoint"**
 
 ## Step 2: Get Production Webhook Secret
@@ -69,9 +71,17 @@ https://taxigate-test-backend.vercel.app/api/payments/webhook
 - ✅ Check Vercel function logs for errors
 
 ### Signature Verification Failed
+- ✅ **CRITICAL**: Make sure the webhook URL in Stripe Dashboard matches exactly:
+  ```
+  https://taxigate-test-backend.vercel.app/api/payments/webhook
+  ```
 - ✅ Make sure you're using the **production** webhook secret (not the CLI one)
-- ✅ Verify the secret is correctly set in Vercel environment variables
-- ✅ Check that the raw body middleware is working correctly
+- ✅ The webhook secret must be from the **exact same endpoint** in Stripe Dashboard
+- ✅ Verify the secret is correctly set in Vercel environment variables as `STRIPE_WEBHOOK_SECRET`
+- ✅ **Redeploy** your Vercel app after adding/updating the webhook secret
+- ✅ Check Vercel logs - the error will show if the secret prefix matches
+- ✅ If you have multiple webhook endpoints in Stripe, make sure you're using the secret from the correct one
+- ✅ The webhook secret format should be: `whsec_...` (starts with `whsec_`)
 
 ### Webhook Received But Payment Not Updated
 - ✅ Check Vercel function logs for processing errors

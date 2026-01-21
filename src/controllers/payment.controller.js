@@ -24,7 +24,6 @@ exports.handleWebhook = catchAsync(async (req, res) => {
     }
   }
   
-  // Ensure payload is a Buffer - this is required for signature verification
   if (!Buffer.isBuffer(payload)) {
     if (typeof payload === 'string') {
       payload = Buffer.from(payload, 'utf8');

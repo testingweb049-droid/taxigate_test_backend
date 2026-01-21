@@ -84,8 +84,17 @@ exports.handleWebhook = catchAsync(async (req, res) => {
     signatureLength: sig.length,
     signaturePrefix: sig.substring(0, 20),
     secretConfigured: !!webhookSecret,
-    secretPrefix: webhookSecret ? webhookSecret.substring(0, 10) : 'none'
+    secretPrefix: webhookSecret ? webhookSecret.substring(0, 10) : 'none',
+    secretStartsWithWhsec: webhookSecret ? webhookSecret.startsWith('whsec_') : false
   });
+  
+  // Validate webhook secret format
+  if (webhookSecret && !webhookSecret.startsWith('whsec_')) {
+    console.error("[WEBHOOK] ERROR: Webhook secret does not start with 'whsec_'");
+    console.error("[WEBHOOK] This might be the endpoint ID instead of the signing secret");
+    console.error("[WEBHOOK] Please check Stripe Dashboard → Webhooks → Your endpoint → Signing secret");
+    return errorResponse(res, "Invalid webhook secret format. Must start with 'whsec_'. Check Stripe Dashboard for the correct signing secret.", 500);
+  }
 
   let event;
 

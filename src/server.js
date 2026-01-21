@@ -95,7 +95,7 @@ app.get('/api/health', (req, res) => {
       if (NODE_ENV === "production") {
         const productionUrl = process.env.VERCEL_URL 
           ? `https://${process.env.VERCEL_URL}` 
-          : "https://taxigate-driver-panel.vercel.app";
+          : "https://taxigate-test-backend.vercel.app";
         logger.info(chalk.blue(`Webhook endpoint: ${productionUrl}/api/payments/webhook`));
         logger.info(chalk.yellow(`Configure this URL in Stripe Dashboard → Webhooks`));
       } else {

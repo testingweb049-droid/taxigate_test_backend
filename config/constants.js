@@ -1,0 +1,11 @@
+module.exports = {
+  EXPRESS_MULTIPLIER: 1.5,
+  DEFAULT_BASE_RATE: 50,
+  DEFAULT_REGION_MULTIPLIER: 1.2,
+  DEFAULT_FREE_SHIPPING_THRESHOLD: 1000,
+  SHIPPING_CLASS_SURCHARGES: {
+    standard: 1.0,
+    fragile: 1.25,
+    oversized: 1.5,
+  },
+};
